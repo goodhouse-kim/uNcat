@@ -52,7 +52,6 @@ def get_search_query(country_code=None, audio=None, offset=0, limit=100):
     
     return query
 
-# UNUSED
 def get_total_count(country_code=SOUTH_KOREA_COUNTRY_CODE, audio=None, offset=0):
     res = empty_search(country_code, audio, offset, limit=1) # we only want the size of the catalog
 
@@ -167,5 +166,3 @@ def write_json(file_name, content, cls=None):
     with open(file_name, 'w') as f:
         json.dump(content, f, ensure_ascii=False, indent=4, cls=cls)
 
-
-store_all_imdb_metadata()
