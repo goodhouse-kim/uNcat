@@ -7,7 +7,7 @@ RAPIDAPI_HOST ="unogsng.p.rapidapi.com"
 OMDB_API_KEY = "get yer own"
 
 
-def print_countries():
+def store_countries():
     conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
 
     headers = {
@@ -20,6 +20,7 @@ def print_countries():
     res = conn.getresponse()
     data = res.read()
 
+    write_json("countries.json", json.loads(data))
     print(data.decode("utf-8"))
 
 def empty_search(country_code=SOUTH_KOREA_COUNTRY_CODE, audio=None, offset=0, limit=100):
