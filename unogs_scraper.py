@@ -4,8 +4,9 @@ from itertools import count
 SOUTH_KOREA_COUNTRY_CODE = 348
 KOREAN_AUDIO = "korean"
 
+RAPIDAPI_HOST ="unogs-unogs-v1.p.rapidapi.com"
+
 RAPIDAPI_KEY = "get yer own"
-RAPIDAPI_HOST ="unogsng.p.rapidapi.com"
 OMDB_API_KEY = "get yer own"
 
 TRANSFORMED_CAT_COLUMNS = ['title', 'type', 'year', 'rated', 'released', 'genre', 'director', 'writer', 
@@ -19,7 +20,7 @@ def store_countries():
         'x-rapidapi-host': RAPIDAPI_HOST
         }
 
-    conn.request("GET", "/countries", headers=headers)
+    conn.request("GET", "/static/countries", headers=headers)
 
     res = conn.getresponse()
     data = res.read()
@@ -47,10 +48,10 @@ def empty_search(country_code=SOUTH_KOREA_COUNTRY_CODE, audio=None, offset=0, li
     return json.loads(data)
 
 def get_search_query(country_code=None, audio=None, offset=0, limit=100):
-    query = "/search?start_year=1950&end_year=2021&orderby=rating&offset={offset}&limit={limit}".format(offset=offset, limit=limit)
+    query = "/search/titles?start_year=1950&end_year=2022&orderby=rating&offset={offset}&limit={limit}".format(offset=offset, limit=limit)
 
     if country_code:
-        query += ("&countrylist=" + str(country_code))
+        query += ("&country_list=" + str(country_code))
 
     if audio:
         query += ("&audio=" + audio)
@@ -68,17 +69,31 @@ def get_cat(country_code=SOUTH_KOREA_COUNTRY_CODE, audio=None):
     cat = []
     offset = 0
     total = 0
+
+    res = empty_search(country_code, audio, offset)
+    # print(res)
+    if 'results' not in res or len(res['results']) == 0:
+        return cat 
+    print(res)
+    # total is only returned if offset is 0
+    if 'Object' in res and 'total' in res['Object']:
+        total = res['Object']['total']
+    else:
+        print('total missing from api response')
+        return cat
+
+    while offset <= total:
     # as much as I hate infinite loops on purpose,
     # when we're getting billed by individual api calls, we can get a little hacky in the spirit of frugality
-    while True:
+    # while True:
         res = empty_search(country_code, audio, offset)
         # print(res)
         if 'results' not in res or len(res['results']) == 0:
             return cat 
-
+        print(res)
         # total is only returned if offset is 0
-        if 'total' in res:
-            total = res['total']
+        if 'Object' in res and 'total' in res['Object']:
+            total = res['Object']['total']
         else:
             print('total missing from api response')
             
@@ -99,10 +114,10 @@ def store_cat(file_name='data.json', country_code=SOUTH_KOREA_COUNTRY_CODE, audi
 
     write_json(file_name, result)
 
-# Needs country.json
+# Needs countries.json
 def store_all_cat_per_country(audio=None):
     # load country and fetch all cat + save to file
-    with open('country.json') as country_file:
+    with open('countries.json') as country_file:
         country_json = json.load(country_file)
 
         for country in country_json['results']:
@@ -110,6 +125,7 @@ def store_all_cat_per_country(audio=None):
             country_name = country['country'].replace(" ", "")
 
             store_cat('{}_cat.json'.format(country_name), country_code, audio=audio)
+
 
 # Needs country.json
 def imdb_id_reducer():
@@ -121,15 +137,15 @@ def imdb_id_reducer():
 
     imdb_ids = set()
 
-    with open('country.json') as country_file:
+    with open('countries.json') as country_file:
         country_json = json.load(country_file)
         for country in country_json['results']:
             country_name = country['country'].replace(" ", "")
             with open('{}_cat.json'.format(country_name)) as country_cat_json:
                 country_cat_list = json.load(country_cat_json)
                 for title in country_cat_list:
-                    if 'imdbid' in title and title['imdbid']:
-                        imdb_ids.add(title['imdbid'])
+                    if 'imdb_id' in title and title['imdb_id']:
+                        imdb_ids.add(title['imdb_id'])
 
     write_json('imdb_id.json', imdb_ids, SetEncoder)
 
@@ -179,7 +195,7 @@ def index_omdb_titles():
         for omdb_title in omdb_titles:
             indexed_imdb_tt_omdb_cat[omdb_title['imdb_id']] = omdb_title
         
-    write_json('indexed_imdb_tt_omdb_cat.json', indexed_imdb_tt_omdb_cat)
+    write_json('indexed_imdb_tt_omdb_catalog.json', indexed_imdb_tt_omdb_cat)
 
 def write_to_csv(filename, columns, data):
     with open(filename, 'w') as csv_file:
@@ -194,8 +210,8 @@ def get_transformed(input_file_name, omdb_cat, filter_country=None):
     with open(input_file_name) as country_cat_file:
         country_cat = json.load(country_cat_file)
         for title in country_cat:
-            if 'imdbid' in title and title['imdbid'] and title['imdbid'] != 'notfound':
-                imdb_id = title['imdbid']
+            if 'imdb_id' in title and title['imdb_id'] and title['imdb_id'] != 'notfound':
+                imdb_id = title['imdb_id']
                 omdb_title = omdb_cat[imdb_id]
 
                 if filter_country is None or filter_country in omdb_title.get('country', 'N/A').lower():
@@ -233,20 +249,31 @@ def produce_transformed_cat(input_file_name='SouthKorea_catalog.json', output_fi
     write_to_csv(output_file_name, TRANSFORMED_CAT_COLUMNS, transformation)
 
 # Takes all the json file produced from above and produces a neat csv with metadata including country data
-def produce_worldwide_per_country_reduced_cat(filter_country="korea"):
+def produce_worldwide_per_country_reduced_cat(filter_country=None):
     # index omdb titles
     with open('indexed_imdb_tt_omdb_catalog.json') as omdb_titles_file:
 
         files_to_reduce = []
         omdb_titles = json.load(omdb_titles_file)
 
-        with open('country.json') as country_file:
+        with open('countries.json') as country_file:
             country_json = json.load(country_file)
             for country in country_json['results']:
-                files_to_reduce.append('{}_catalog.json'.format(country['country'].replace(" ", "")))
+                files_to_reduce.append('{}_cat.json'.format(country['country'].replace(" ", "")))
 
-        print(files_to_reduce)
 
         for cat_file_name in files_to_reduce:
             transformation = get_transformed(cat_file_name, omdb_titles, filter_country=filter_country)
             write_to_csv("transformed_{}".format(cat_file_name).replace(".json", ".csv"), TRANSFORMED_CAT_COLUMNS, transformation)
+
+
+
+# store_all_cat_per_country()
+
+# imdb_id_reducer()
+
+# store_all_imdb_metadata()
+
+# index_omdb_titles()
+
+# produce_worldwide_per_country_reduced_cat()
